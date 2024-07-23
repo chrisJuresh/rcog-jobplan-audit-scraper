@@ -60,7 +60,7 @@ def save_to_csv(jobs, filename):
     print(f"Saved {len(jobs)} jobs to {filename}")
 
 def main():
-    base_url = 'https://www.jobs.nhs.uk/candidate/search/results?keyword=gynaecologist&skipPhraseSuggester=true&payBand=CONSULTANT&language=en'
+    base_url = 'https://www.jobs.nhs.uk/candidate/search/results?keyword=Obstetrician&skipPhraseSuggester=true&payBand=CONSULTANT&language=en'
     all_jobs = []
 
     first_page_content = fetch_jobs(base_url)

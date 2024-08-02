@@ -114,7 +114,7 @@ def download_document(job_url, document_id, document_name, folder_path):
         csrf_input = job_soup.find('input', {'name': '_csrf'})
         if not csrf_input:
             print(f"CSRF token not found for {job_url}")
-            return
+            return False
 
         csrf_token = csrf_input['value']
 
@@ -135,10 +135,12 @@ def download_document(job_url, document_id, document_name, folder_path):
             with open(file_path, 'wb') as f:
                 f.write(response.content)
             print(f"Downloaded: {document_name}")
+            return True
         else:
             print(f"Failed to download {document_name}: Content-Disposition header not found")
             print(f"Response headers: {response.headers}")
             print(f"Response content: {response.text[:500]}...")  # Print first 500 characters of response
+            return False
 
     except requests.exceptions.Timeout:
         print(f"Timeout error while downloading {document_name}")
@@ -146,6 +148,8 @@ def download_document(job_url, document_id, document_name, folder_path):
         print(f"Error downloading {document_name}: {e}")
     except Exception as e:
         print(f"Unexpected error while downloading {document_name}: {str(e)}")
+    
+    return False
 
 def get_total_pages(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -219,13 +223,19 @@ def scrape_jobs(urls):
                     os.makedirs(folder_path, exist_ok=True)
                     folder_paths.append(folder_path)
 
-                    # Download supporting documents
+                    # Download supporting documents and track failed downloads
+                    failed_downloads = []
                     for doc_id, doc_name in supporting_documents:
                         try:
                             print(f"Attempting to download: {doc_name}")
-                            download_document(job['Link'], doc_id, doc_name, folder_path)
+                            success = download_document(job['Link'], doc_id, doc_name, folder_path)
+                            if not success:
+                                failed_downloads.append(doc_name)
                         except Exception as e:
                             print(f"Error downloading document {doc_name}: {str(e)}")
+                            failed_downloads.append(doc_name)
+                    
+                    job['Failed Downloads'] = ', '.join(failed_downloads) if failed_downloads else 'None'
 
                 all_jobs.extend(jobs)
 

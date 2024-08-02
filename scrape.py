@@ -87,11 +87,10 @@ def get_contact_details(job_link):
 
     return job_title, contact_name, contact_email, contact_number, supporting_documents
 
-def download_document(document_id, document_name, folder_path):
-    url = 'https://www.jobs.nhs.uk/candidate/jobadvert/C9318-24-0587/getfile'
+def download_document(job_url, document_id, document_name, folder_path):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Referer': 'https://www.jobs.nhs.uk/',
+        'Referer': job_url,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
         'Accept-Encoding': 'gzip, deflate, br',
@@ -101,22 +100,52 @@ def download_document(document_id, document_name, folder_path):
         'Sec-Fetch-Mode': 'navigate',
         'Sec-Fetch-Site': 'same-origin',
         'Sec-Fetch-User': '?1',
+        'Origin': 'https://www.jobs.nhs.uk',
+        'Content-Type': 'application/x-www-form-urlencoded',
     }
-    data = {
-        'document': document_id,
-        '_csrf': session.cookies.get('XSRF-TOKEN', '')  # Get CSRF token from cookies
-    }
+    
     try:
-        response = session.post(url, headers=headers, data=data, allow_redirects=True)
-        if response.status_code == 200:
+        # First, get the job page
+        job_response = session.get(job_url, headers=headers, timeout=30)
+        job_response.raise_for_status()
+
+        # Extract the CSRF token from the job page
+        job_soup = BeautifulSoup(job_response.text, 'html.parser')
+        csrf_input = job_soup.find('input', {'name': '_csrf'})
+        if not csrf_input:
+            print(f"CSRF token not found for {job_url}")
+            return
+
+        csrf_token = csrf_input['value']
+
+        # Construct the download URL
+        download_url = job_url + '/getfile'
+
+        data = {
+            'document': document_id,
+            '_csrf': csrf_token
+        }
+
+        # Now attempt to download the file
+        response = session.post(download_url, headers=headers, data=data, allow_redirects=True, timeout=30)
+        response.raise_for_status()
+
+        if 'Content-Disposition' in response.headers:
             file_path = os.path.join(folder_path, document_name)
             with open(file_path, 'wb') as f:
                 f.write(response.content)
             print(f"Downloaded: {document_name}")
         else:
-            print(f"Failed to download {document_name}: {response.status_code}")
+            print(f"Failed to download {document_name}: Content-Disposition header not found")
+            print(f"Response headers: {response.headers}")
+            print(f"Response content: {response.text[:500]}...")  # Print first 500 characters of response
+
+    except requests.exceptions.Timeout:
+        print(f"Timeout error while downloading {document_name}")
     except requests.exceptions.RequestException as e:
         print(f"Error downloading {document_name}: {e}")
+    except Exception as e:
+        print(f"Unexpected error while downloading {document_name}: {str(e)}")
 
 def get_total_pages(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -175,6 +204,7 @@ def scrape_jobs(urls):
             if html_content:
                 jobs, start_id = parse_jobs(html_content, start_id)
                 for job in jobs:
+                    print(f"Processing job: {job['Title']}")
                     job_title, contact_name, contact_email, contact_number, supporting_documents = get_contact_details(job['Link'])
                     job.update({
                         'Contact Job Title': job_title,
@@ -191,7 +221,11 @@ def scrape_jobs(urls):
 
                     # Download supporting documents
                     for doc_id, doc_name in supporting_documents:
-                        download_document(doc_id, doc_name, folder_path)
+                        try:
+                            print(f"Attempting to download: {doc_name}")
+                            download_document(job['Link'], doc_id, doc_name, folder_path)
+                        except Exception as e:
+                            print(f"Error downloading document {doc_name}: {str(e)}")
 
                 all_jobs.extend(jobs)
 
